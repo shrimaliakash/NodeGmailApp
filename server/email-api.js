@@ -79,7 +79,6 @@ app.post('/create-user', (req, res) => {
     }
 });
 
-
 app.post('/login-user', (req, res) => {
     const email = req.body.email;
     const password = req.body.password;
@@ -107,7 +106,6 @@ app.post('/login-user', (req, res) => {
         res.send(JSON.stringify({success: false, message: 'Login Not Successfully.'}));
     }
 });
-
 
 app.post('/logout-user', (req, res) => {
     const email = req.body.email;
@@ -194,15 +192,24 @@ app.post('/send-message', (req, res) => {
             subject: subject,
             message: body
         }
-        knex('email').insert(data)
-        .then((rows) => {
-            transporter.sendMail(mailOptions, function(error, info){
-                if (error) {
-                    res.send(JSON.stringify({success: false, message: error}));
-                } else {
-                    res.send(JSON.stringify({success: true, message: "Send Message SuccessFully."}));
-                }
+        knex('email').insert(data).returning('id')
+        .then((id) => {
+            const EmailData = {
+                message_id: id
+            }
+            knex('email').update(EmailData)
+            .then((rows) => {
+                transporter.sendMail(mailOptions, function(error, info){
+                    if (error) {
+                        res.send(JSON.stringify({success: false, message: error}));
+                    } else {
+                        res.send(JSON.stringify({success: true, message: "Send Message SuccessFully."}));
+                    }
+                })
             })
+            .catch((err) => {
+                res.send(JSON.stringify({success: false, message: 'Send Message Failed.'})) 
+            });
         })
         .catch((err) => {
             res.send(JSON.stringify({success: false, message: 'Send Message Failed.'})) 
@@ -222,13 +229,13 @@ app.get('/get-messages', (req, res) => {
         knex('email').select("*").where('to_address', to_address).andWhere('status', 1)
         .then((rows) => {
             if(rows != '' && rows != undefined) {
-                res.send(JSON.stringify({success: true, message: 'Messages Found.', data: rows}))
+                res.send(JSON.stringify({success: true, message: 'Inbox Message Found.', data: rows}))
             } else {
-                res.send(JSON.stringify({success: true, message: 'Messages Not Found.'}))
+                res.send(JSON.stringify({success: true, message: 'Inbox Message Not Found.'}))
             }
         })
         .catch((err) => {
-            res.send(JSON.stringify({success: false, message: 'Send Message Failed.'})) 
+            res.send(JSON.stringify({success: false, message: 'Inbox Message Failed.'})) 
         });
     } else {
         res.send(JSON.stringify({success: false, message: 'Logout Not Successfully.'}));
@@ -245,13 +252,13 @@ app.get('/sent-message', (req, res) => {
         knex('email').select("*").where('from_address', from_address).andWhere('status', 1)
         .then((rows) => {
             if(rows != '' && rows != undefined) {
-                res.send(JSON.stringify({success: true, message: 'Messages Found.', data: rows}))
+                res.send(JSON.stringify({success: true, message: 'Sent Message Found.', data: rows}))
             } else {
-                res.send(JSON.stringify({success: true, message: 'Messages Not Found.'}))
+                res.send(JSON.stringify({success: true, message: 'Sent Message Not Found.'}))
             }
         })
         .catch((err) => {
-            res.send(JSON.stringify({success: false, message: 'Send Message Failed.'})) 
+            res.send(JSON.stringify({success: false, message: 'Sent Message Failed.'})) 
         });
     } else {
         res.send(JSON.stringify({success: false, message: 'Logout Not Successfully.'}));
@@ -260,7 +267,7 @@ app.get('/sent-message', (req, res) => {
 
 app.get('/read-message/:id', (req, res) => {
     const id = req.params.id;
-    knex('email').select("*").where('id', id).first()
+    knex('email').select("*").where({'id': id}).orWhere({'message_id': id})
     .then((rows) => {
         if(rows != '' && rows != undefined) {
             var login_data =  {
@@ -280,17 +287,21 @@ app.get('/read-message/:id', (req, res) => {
 
 app.delete('/remove-message/:id', (req, res) => {
     const id = req.params.id;
-    knex('email').select("*").where('id', id).first()
+    knex('email').select("*").where('id', id).orWhere('message_id', id)
     .then((rows) => {
         if(rows != '' && rows != undefined) {
             var message_data =  {
                 status : '0'
             };
             knex('email').where('id', id).update(message_data).then((update_rows) => {
-                res.send(JSON.stringify({success: true, message: 'Messages Deleted.'}))
+                if(rows != '' && rows != undefined) {
+                    res.send(JSON.stringify({success: true, message: 'Message Deleted.'}));
+                } else {
+                    res.send(JSON.stringify({success: true, message: 'Message Not Found.'}))
+                }
             }).catch((err) => {res.send(JSON.stringify({success: false, message: err})) });
         } else {
-            res.send(JSON.stringify({success: true, message: 'Messages Not Found.'}))
+            res.send(JSON.stringify({success: true, message: 'Message Not Found.'}))
         }
     })
     .catch((err) => {
@@ -298,5 +309,129 @@ app.delete('/remove-message/:id', (req, res) => {
     });
 });
 
+app.delete('/remove-trash-message/:id', (req, res) => {
+    const id = req.params.id;
+    knex('email').select("*").where('id', id).orWhere('message_id', id)
+    .then((rows) => {
+        if(rows != '' && rows != undefined) {
+            var message_data =  {
+                status : '0'
+            };
+            knex('email').where('id', id).update(message_data).then((update_rows) => {
+                knex('email').select("*").where({'status': '0'})
+                .then((rows) => {
+                    if(rows != '' && rows != undefined) {
+                        knex('email').where({ id: id }).del()
+                        .then((book) => res.send(JSON.stringify({success: true, message: 'Message Deleted.'})))
+                        .catch((err) => res.send(JSON.stringify({success: false, message: err})));
+                    } else {
+                        res.send(JSON.stringify({success: true, message: 'Message Not Found.'}))
+                    }
+                }).catch((err) => {res.send(JSON.stringify({success: false, message: err})) });
+            }).catch((err) => {res.send(JSON.stringify({success: false, message: err})) });
+        } else {
+            res.send(JSON.stringify({success: true, message: 'Message Not Found.'}))
+        }
+    })
+    .catch((err) => {
+        res.send(JSON.stringify({success: false, message: 'Delete Message Failed.'})) 
+    });
+});
+
+app.post('/reply-message/:id', (req, res) => {
+    const id = req.params.id;
+    knex('email').select("*").where('id', id).first()
+    .then((rows) => {
+        if(rows != '' && rows != undefined) {
+            var subject = rows.subject;
+            const to = req.body.to;
+            const from = req.body.from;
+            var body = req.body.body;
+            const transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: {
+                    user: 'akashshrimali2019@gmail.com',
+                    pass: 'akash@12345'
+                }
+            });
+            const mailOptions = {
+                from: from,
+                to: to,
+                subject: subject,
+                text: body
+            };
+            if(to == '' || to == null) {
+                res.send(JSON.stringify({success: false, message: 'Please Enter To'}));
+            } else if(from == '' || from == null) {
+                res.send(JSON.stringify({success: false, message: 'Please Enter From'}));
+            }
+            if(to != '' && from != '') {
+                if(subject == undefined) {
+                    subject = null;
+                }
+                if(body == undefined) {
+                    body = null;
+                }
+                const data = {
+                    message_id: id,
+                    from_address: from,
+                    to_address: to,
+                    subject: subject,
+                    message: body
+                }
+                knex('email').insert(data)
+                .then((rows) => {
+                    transporter.sendMail(mailOptions, function(error, info){
+                        if (error) {
+                            res.send(JSON.stringify({success: false, message: error}));
+                        } else {
+                            res.send(JSON.stringify({success: true, message: "Reply Message SuccessFully."}));
+                        }
+                    })
+                })
+                .catch((err) => {
+                    res.send(JSON.stringify({success: false, message: 'Reply Message Failed.'})) 
+                });
+            } else {
+                res.send(JSON.stringify({success: false, message: 'Reply Message Not Successfully.'}));
+            }
+        } else {
+            res.send(JSON.stringify({success: true, message: 'Messages Not Found.'}))
+        }
+    })
+    .catch((err) => {
+        res.send(JSON.stringify({success: false, message: 'Messages Not Found.'})) 
+    });
+});
+
+app.get('/trash-message', (req, res) => {
+    knex('email').select("*").where({'status': '0'})
+    .then((rows) => {
+        if(rows != '' && rows != undefined) {
+            res.send(JSON.stringify({success: true, message: 'Trash Message Found.', data: rows}))
+        } else {
+            res.send(JSON.stringify({success: true, message: 'Trash Message Not Found.'}))
+        }
+    })
+    .catch((err) => {
+        res.send(JSON.stringify({success: false, message: 'Trash Message Failed.'})) 
+    });
+});
+
+app.get('/count-message/:id', (req, res) => {
+    const id = req.params.id;
+    knex('email').count('id as count').where('id', id).orWhere('message_id', id).first()
+    .then((rows) => {
+        var result = rows['count'];
+        if(rows != '' && rows != undefined) {
+            res.send(JSON.stringify({success: true, message: 'Message Found.', count:result}))
+        } else {
+            res.send(JSON.stringify({success: true, message: 'Message Not Found.'}))
+        }
+    })
+    .catch((err) => {
+        res.send(JSON.stringify({success: false, message: 'Get Message Failed.'})) 
+    });
+});
 
 app.listen(port, () => console.log(`Email app listening on port ${port}!`));
