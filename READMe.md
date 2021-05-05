@@ -8,7 +8,9 @@ cd /var/www/htdocs/NodeGmailApp
 
 npm install 
 
-nodemon start
+npm install nodemon
+
+nodemon start or node start
 
 For Window User
 
@@ -20,4 +22,6 @@ cd C://xampp/htdocs/NodeGmailApp
 
 npm install 
 
-nodemon start
+npm install nodemon
+
+nodemon start or npm start
